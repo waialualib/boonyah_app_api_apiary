@@ -1,0 +1,4222 @@
+FORMAT: 1A
+HOST: https://boonyah.com/api/v1/
+
+# BoonYah! API, Version 1
+
+# *USAGE / IMPORTANT INFORMATION*
+
+## Introduction:
+The BoonYah! Public API contains methods that allow access both via Web-based API's, as well as methods specific to iOS-based native applications.  
+Requests use http verbs `GET` and `POST` to handle reading and updating data on the server.  
+Responses are all in JSON format.  
+
+Please read the entire document carefully before proceeding with building connections to the API.
+## Sandbox Server:
+We provide a sandbox environment for testing and development.  The URL is https://mobileshoppingclub.com/api/v1/
+
+For both the sandbox and production URL's, the iOS developer is provided with an API key that is used in the first customer registration request API method.  
+This registration method will return two keys, one for use by the iOS app, and another for use by the Kendo application as a webview key.  
+The iOS developer is responsible for `POST`ing the webview native key back via WebView, the response of which will be received by the Kendo application.
+
+Kendo: For the sandbox, the Kendo developer will be provided a special sandbox key to be used in place of the `webview_key` that is returned by the initial request.  
+But, the sandbox will also work for Kendo with a valid `webview_key` returned by the initial request initiated by the iOS app during hand-off.  This facilitates testing of the application in both scenarios.
+## Authentication:
+__iOS:__
+
+Authentication will be handled by use of a private key, provided by the backend developer, which is to be hard coded into the production iOS as a secret.
+This key will be passed to a registration API method (please see the `Register Device` method in the `Native iOS` section below), in conjunction with an additional datapoint, and a unique token will be returned.
+This unique token (`native_key`) is also to be kept secret to the application.
+This token will serve as a session/customer account identifer and shall be passed to all other methods in the API in the header as follows:
+
+    AUTHORIZATION: Token token="native_key"
+The initial registration is the only method that does not require the token in the header.  All others will return 400 if not present or invalid.
+
+The token shall be enclosed in quotation marks as per above.
+
+The iOS app will also receive back a `webview_native_key` which is to be passed as a POST parameter to the `loadWebView` method that will load the Kendo application in the web view.
+
+The iOS app will have access to the iOS, Customer, and Messages groups, as well as the Default group (for server error reporting).
+
+__Kendo:__
+
+API Document: http://docs.boonyah.apiary.io/
+API Blueprint (used to create document on apiary.io): https://raw.github.com/gtcode/boonyah-api/master/apiary.apib
+Sandbox token: (Obtain from Paul)
+Sandbox API: https://mobileshoppingclub.com/api/v1/
+
+Sandbox API has enabled CORS (Cross-Origin Resource Sharing).
+
+Authorization for user will be handled by iOS application and using PHP to render token in index.html.  
+But for development, you must use the code in Section 1 below to attach the Authorization header to every jQuery ajax request.  
+Our production server will substitute the apiDomain and webviewToken using PHP later on.
+
+1) How to set up all AJAX requests using sandbox token
+
+Add this to the Kendo application's index.html directly before closing </head> tag:
+
+    <script type="text/javascript">
+        var apiDomain = 'https://mobileshoppingclub.com';
+        var webviewToken= 'mySandboxToken';
+        function setupAuthorizationForWebView() {
+            $.ajaxSetup({
+                headers: { 'Authorization': 'Token token="' + webviewToken + '"' }
+            });
+        }
+        setupAuthorizationForWebView();
+    </script>
+2) Sample API call
+    
+    jQuery.ajax(apiDomain + "/api/v1/businesses?distance=0.5&sort=alpha&page_number=1&page_size=30", {
+        "method": "get",
+        "complete": function(data, status){
+            alert(JSON.stringify(data));
+        }
+    });
+The Kendo app shall be loaded initially by the iOS application.  
+The iOS application initiates a `POST` request to a webview, which will return the Kendo single page app, along with an embedded `webview_key`.
+The Kendo app shall immediately plan to attach this returned key to all requests to the API, in the same format as the iOS application (i.e. using AUTH token).
+
+    AUTHORIZATION: Token token="webview_key"
+The Kendo app will have access to all methods except the iOS method.
+## Pagination:
+
+For Businesses, Offers, and Wallet, pagination is handled by including one or two `GET` parameters in your request.  
+When using pagination, you can set the page size, or both the page size and page number.  
+This feature is documented in all API methods that use this feature.
+
+### Page Size (e.g. 30 records, first page only):
+
+    https://boonyah.com/api/v1/requestMethod?page_size=30
+### Page Size And Page Number (e.g. 30 records, records 31-60, second page only):
+
+    https://boonyah.com/api/v1/requestMethod?page_size=30&page_number=2
+Responses that use pagination will include three fields in the response: `page_number`, `page_size`, and `record_count`.  
+You may use record count to determine how many total pages of data are available, but please be sure to use the most recent `record_count` in case the dataset changes in between requests.
+## Location:
+
+If Geolocation coordinates are not registered with the customer's session, the server will attempt to approximate location based on a reverse IP address lookup.  
+The lat/long from this result, or from the **Geolocation** method, will be used, with the ability to override this with a manually-selected lat/long pair (e.g. chosen from a maps interface).
+## Customer Authentication:
+
+The customer account will be created or associated automatically by the API server when the registration method is invoked.
+Further associations will be permitted via Facebook, Email, and (Keith to confirm) mobile phone.  
+Any of these, in a confirmed state (Facebook confirmed, email confirmation link clicked, mobile opted-in), will provide additional features such as saving/redeeming offers.
+Before the association occurs, there will be limited usage of the API.
+
+## Versioning:
+All API JSON responses will include a key/value that represents the current API and webview revisions in the following form:
+
+        {
+            ...
+            "api_revision": "a123456b",
+            "webview_revision": "a123456b"
+        }  
+
+## CSRF Protection:
+
+CSRF Protection is implicit in the use of the custom authentication token that will be passed back by the initial registration method and used in all subsequent API requests.
+## Response Status - Success / Error:
+### Success
+If all is well with a `POST` request, then the response will indicate this as follows:
+
+        {
+            "status": "ok"
+        }
+### Errors
+Server-based errors for both `POST` and `GET` requests will receive a 500 level response.  You are expected to handle this gracefully in your client code.
+
+        {
+            "status": "error",
+            "error_type": "fatal",
+            "error_message": "Error Message - Debug Only - Do Not Display To End User"
+        }
+Validation errors for `POST` requests will occur as follows:
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There Were Errors With Your Form Submission.",
+            "validation_errors": {
+                "field_2": "Error Message 1",
+                "field_2": "Error Message 2",
+            }
+        }
+Errors related to malformed URLs, record not found, etc.:
+
+        {
+            "status": "error",
+            "error_type": "400, 404",
+            "error_message": "400 - Bad Request OR 404 Not Found - To Be Handled",
+        }
+Your code should gracefully handle the scenario where a malformed JSON response is received, or no response at all is received (due to connection failure or other issue).
+And, your code should also plan to have some form of error reporting that can be passed back to the API, both for errors within your own application, and errors related to unexpected responses from the API.
+To handle this, we provide a special method for error reporting.  Please see `Default`, `Error Reporting` at the bottom for further details.
+Both the iOS and Kendo applications are expected to use this method throughout the design.
+
+### Response Status Codes:
+
+* 200 - OK [GET], [POST] -- this occurs even if there is a form validation error, in which case you will need to check the 'status' field in the JSON response.
+* 400 - Bad Request
+* 401 - Not Authorized
+* 404 - Not Found
+* 500 - Internal Server Error -- this should only happen if there is an error with the server
+
+# *API METHODS*
+
+# Group Native iOS
+Native iOS specific resources of the **BoonYah! API**
+This group is accessible only by the iOS native application.
+UPDATE January 2015 - We will use this for Android as well. Ignore the naming convention of iOS.
+
+## Register Device [/ios/register]
+### Send Device Info [POST]
+This method is to be used initially by the iOS device to register the device and create or associate with a database customer account.
+
+The private API key, along with a unique identiferForVendor, is to be passed to this method, and a unique usage key will be passed back in the response.  
+This key is to be used in all subsequent requests to the API, and shall be passed to the Kendo application for similar usage.
+
+The key may be invalidated at any time simply by requesting a new key using this same method, and the key shall then be passed again to the Kendo application.
+
+If `UIDevice.identifierForVendor` is not present (if using iOS 5.0 or earlier), then please instead create and use a unique hash that is persistent and constant throughout the lifetime of the application installation.
+
+The param "app_version_status" will tell iOS whether the app is current, out of date, or deprecated.  The latest version is also shown in "app_latest_version".
+If the user declines a recommended upgrade, iOS or Kendo will call the latest_version that was declined to /settings/declineAppVersion.  If that occurs, as long as there is not a new release, and as long as their current release does not become deprecated, then "app_version_status" will revert to "current".
+
+The key/value pairs inside "webview_theming" contain overrides that are used to theme the Kendo app, and shall be used to also theme iOS in coordination with this.
+If a value is blank, then ignore this override and use the internal default.
+
++ Request (application/json)
+
+        {
+            "api_key": "xxx",
+            "device_id": "UIDevice.identifierForVendor or a unique per-installation persistent hash (e.g. hash deviceuid with timestamp and random string)",
+            "device_type": "iOS or android", // If excluded it will default to iOS for legacy purposes
+            "app_version": "1.0",
+            "build_version": "1.0"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "native_key": "this is your http auth key",
+            "webview_native_key": "this is the key to pass to the /ios/loadWebView/ URL using POST",
+            "settings": {
+                "splash_screen_image_url": "https://whatever.com/something.jpg",
+                "webview_start_page": "/#page-categories",
+                "webview_theming": {
+                    "logo_title_image_url": "./assets/imgs/logo-white.png",
+                    "back_button_image_url": "./assets/imgs/ico-back-button.png",
+                    "map_marker_image_url": "./assets/imgs/boonyahB.png",
+                    "header_color1": "aaaaaa",
+                    "header_color2": "afafaf"
+                },
+                "mobile_app_image_urls": {
+                    "mobile_app_title_image": "https://whatever.com/some.jpg",
+                    "mobile_back_button_image": "https://whatever.com/some.jpg",
+                    "mobile_map_marker_image": "https://whatever.com/some.jpg",
+                },
+                "subjects": [
+                    ["subject_1_type", "subject_1_name"],
+                    ["subject_2_type", "subject_2_name"],
+                    ["subject_3_type", "subject_3_name"]
+                ]
+            },
+            "app_site_title": "BoonYah",
+            "app_name": "BoonYah (tm)",
+            "app_name_clean": "BoonYah",
+            "message_unread_count": "1",
+            "webview_current_revision": "29ac8ab360bd",
+            "app_version_status": "one of these three: current, upgrade_recommended, upgrade_strongly_recommended",
+            "app_latest_version": "1.4",
+            "use_keycode_screen": false,
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }
+
+## APNS [/ios/apns]
+### Send APNS Registration Info [POST]
+This registration method is required for Boonyah to be able to send asynchronous push notifications to the customer.
+
+Typically it will be the second request made by the native application.
++ Request (application/json)
+
+        {
+            "apns_key": "The APNS key that the server will use to send push notifications"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "invalid_token_format"
+        }
+
+## Load Web View [/ios/loadWebView/]
+### Load Web View using provided token [GET]
+This request is intended to be invoked to any call to open a webview from the native application.  
+It contains an action parameter that will be passed back.
+IMPORTANT: the url must include the trailing slash, else the resources will not load correctly.  
+This was done so as to not disturb the work being performed by the Kendo developer.
+
++ Response 200 (application/json)
+
+        [HTML for Kendo Application, including any necessary state information and with the `webview_key` embedded in the index html as javascript]
+
+## Geofence [/ios/geofence]
+### Send Geofence Event [POST]
+Boonyah stores all `at` and `leave` geofence events that are received by the iOS application.
+Note: this will return validation errors if there are errors in your request format.  
+Therefore you MUST check and handle this gracefully in your code, and if validation errors occur, your code MUST then call POST /api/v1/default/errorReporting with debugging information.
+
+If there is a properly configured event on the server, the server will send a push, and send back data per the below sample response.
+If there is no event on the server, the response will return 'push_status': 'error', with 'push_status_message' giving an error message, such as 'event not found or configured'.
+
++ Request (application/json)
+        
+        {
+            "type": "at or leave",
+            "time": "XXXX",
+            "place_name": "Xx",
+            "place_id": "xx",
+            "place_attributes": {
+                "key": "val",
+                "key2": "val2"
+            },
+            "place_type": "public or private"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                },
+                "loyalty_id": "777" /// This will only be included if THIS is a loyalty push
+            }
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-survey?b_id=1234",  // This is for the new survey feature
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            }
+        }
+        
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push"   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+        }
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        } 
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }        
+        
+## Sighting [/ios/sighting]
+### Send Beacon Sighting [POST]
+Note: this will return validation errors if there are errors in your request format.  
+Therefore you MUST check and handle this gracefully in your code, and if validation errors occur, your code MUST then call POST /api/v1/default/errorReporting with debugging information.
+
++ Request (application/json)
+
+        {
+            "transmitter_id": "xx",
+            "transmitter_name": "xx",
+            "transmitter_owner_id": "xx",
+            "transmitter_icon_url": "xx",
+            "transmitter_battery_level": "xx",
+            "transmitter_temperature": "xx"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            },
+            "delayed_push": {  // Legacy, Deprecated.  For Punchcard delayed push.
+                "aps": {
+                    "alert": {
+                        "body": "A delayed local notification"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-prize?p_id=1234"
+                },
+                "delay": "3600",
+                "loyalty_id": "777"
+            },
+            "delayed_pushes": [ // For punchcard and quest gifts, new version
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Punchcard"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=1234"
+                    },
+                    "delay": "3600",
+                    "loyalty_id": "777"
+                },
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #1"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=2345"
+                    },
+                    "delay": "3700",
+                    "loyalty_id": "778"
+                },                
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #2 that did not result in a prize"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-quest?b_id=3456"
+                    },
+                    "delay": "3800"
+                }
+            ]
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push",   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+            "no_push_reason": "text"
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        }              
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "between_checkins"   // this happens if the customer is between check-ins.  This is set in the campaign as 'time between spins'.
+        }
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "checkins_finished"   // This happens if the customer already has their golden ticket and the golden ticket campaign is set to 'do not use spin to win', or if 'spin to win' ran out (future)
+        }
+
++ Response 206 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }     
+        
+## Visit [/ios/visit]
+### Send Beacon Visit [POST]
+Note: this will return validation errors if there are errors in your request format.  
+Therefore you MUST check and handle this gracefully in your code, and if validation errors occur, your code MUST then call POST /api/v1/default/errorReporting with debugging information.
+If there is a properly configured event on the server, the server will send a push, and send back data per the below sample response.
+If there is no event on the server, the response will return 'push_status': 'error', with 'push_status_message' giving an error message, such as 'event not found or configured'.
+
++ Request (application/json)
+
+        {
+            "type": "started or ended",
+            "transmitter_id": "xx",
+            "transmitter_name": "xx",
+            "transmitter_owner_id": "xx",
+            "transmitter_icon_url": "xx",
+            "transmitter_battery_level": "xx",
+            "transmitter_temperature": "xx",
+            "visit_start_time": "xx",
+            "visit_last_update_time": "xx",
+            "communication_id": "xx",
+            "communication_title": "xx",
+            "communication_description": "xx",
+            "communication_content_url": "xx",
+            "communication_campaign_id": "xx",
+            "communication_expires": "xx",
+            "communication_content_attributes": {
+                "key": "val",
+                "key2": "val2"
+            }
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            },
+            "delayed_push": {  // This will only be included if there is a loyalty gift AND for checkins
+                "aps": {
+                    "alert": {
+                        "body": "A delayed local notification"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-prize?p_id=1234"
+                },
+                "delay": "3600",
+                "loyalty_id": "777"
+            },
+            "delayed_pushes": [ // For punchcard and quest gifts, new version
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Punchcard"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=1234"
+                    },
+                    "delay": "3600",
+                    "loyalty_id": "777"
+                },
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #1"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=2345"
+                    },
+                    "delay": "3700",
+                    "loyalty_id": "778"
+                },                
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #2 that did not result in a prize"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-quest?b_id=3456"
+                    },
+                    "delay": "3800"
+                }
+            ]
+        }
+  
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push",   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+            "no_push_reason": "text"
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        }              
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "between_checkins"   // this happens if the customer is between check-ins.  This is set in the campaign as 'time between spins'.
+        }
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "checkins_finished"   // This happens if the customer already has their golden ticket and the golden ticket campaign is set to 'do not use spin to win', or if 'spin to win' ran out (future)
+        }
+
++ Response 206 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }     
+
+## iBeacon [/ios/ibeacon]
+### Send iBeacon Interaction [POST]
+Note: this will return validation errors if there are errors in your request format.  
+Therefore you MUST check and handle this gracefully in your code, and if validation errors occur, your code MUST then call POST /api/v1/default/errorReporting with debugging information.
+
++ Request (application/json)
+
+        {
+            "major_minor_id": "[major]_[minor], should be a 2 byte uint (for the major id), then an underscore, then another 2 byte uint (for the minor id)",
+            "distance": "should be one of 'immediate', 'near', 'far'"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            },
+            "delayed_push": {  // This will only be included if there is a loyalty gift AND for checkins
+                "aps": {
+                    "alert": {
+                        "body": "A delayed local notification"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-prize?p_id=1234"
+                },
+                "delay": "3600",
+                "loyalty_id": "777"
+            },
+            "delayed_pushes": [ // For punchcard and quest gifts, new version
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Punchcard"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=1234"
+                    },
+                    "delay": "3600",
+                    "loyalty_id": "777"
+                },
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #1"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=2345"
+                    },
+                    "delay": "3700",
+                    "loyalty_id": "778"
+                },                
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #2 that did not result in a prize"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-quest?b_id=3456"
+                    },
+                    "delay": "3800"
+                }
+            ]
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push",   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+            "no_push_reason": "text"
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        }              
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "between_checkins"   // this happens if the customer is between check-ins.  This is set in the campaign as 'time between spins'.
+        }
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "checkins_finished"   // This happens if the customer already has their golden ticket and the golden ticket campaign is set to 'do not use spin to win', or if 'spin to win' ran out (future)
+        }
+
++ Response 206 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }     
+
+## QR Code [/ios/qrcode]
+### Send QR Code Interaction [POST]
+This method is a proxy to /qrcode, please see /qrcode for specification.
+        
++ Request (application/json)
+
+        {
+            "qr_code": "boonyah://checkin/business_id/1234"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            },
+            "delayed_push": {  // This will only be included if there is a loyalty gift AND for checkins
+                "aps": {
+                    "alert": {
+                        "body": "A delayed local notification"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-prize?p_id=1234"
+                },
+                "delay": "3600",
+                "loyalty_id": "777"
+            },
+            "delayed_pushes": [ // For punchcard and quest gifts, new version
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Punchcard"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=1234"
+                    },
+                    "delay": "3600",
+                    "loyalty_id": "777"
+                },
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #1"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=2345"
+                    },
+                    "delay": "3700",
+                    "loyalty_id": "778"
+                },                
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #2 that did not result in a prize"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-quest?b_id=3456"
+                    },
+                    "delay": "3800"
+                }
+            ]
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push",   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+            "no_push_reason": "text"
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        }              
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "between_checkins"   // this happens if the customer is between check-ins.  This is set in the campaign as 'time between spins'.
+        }
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "checkins_finished"   // This happens if the customer already has their golden ticket and the golden ticket campaign is set to 'do not use spin to win', or if 'spin to win' ran out (future)
+        }
+
++ Response 206 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }     
+
+## Loyalty Notification [/ios/loyaltyNotification]
+### Send the loyalty id that has just been displayed to the user via scheduled Local Notification [POST]
+This is used to tell the server that iOS has shown the end user the scheduled Local Notification.
+The purpose of this is so the server can create the corresponding message in the inbox.
+The server will attempt to do so via cron but this should not be relied upon in terms of timing.
+This will return 404 if the loyalty_id is not included or is empty.
++ Request (application/json)
+
+        {
+            "loyalty_id": "1234"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "badge_count": "4"
+        }
+
+## Sales Login [/ios/salesLogin]
+### Send Password For Sales Login Feature [POST]
+This endpoint is used to allow the iOS app to authenticate a password used by sales reps for a demonstration mode feature.
+(The demo mode is not highly security critical but helpful so we can control the passwords in the API).
++ Request (application/json)
+
+        {
+            "password": "theSalesRepPassword"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"  // If password is valid
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",  // If password is invalid
+            "error_type": "invalid_password"
+        }
+
+# Group Location
+Location related resources of the **BoonYah! API**
+This group is accessible for now only by iOS.
+
+## Geofence Info [/location/geofence?lat=1.234&long=2.345&page_number=1&page_size=30]
+### Get nearby Geofence data [GET]
+This will retrieve nearby geofences.
+business_id should be unique for each row.
+Radius is in meters.  Distance is in kilometers.
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+    
++ Response 200 (application/json)
+
+        {
+            "geofences": [
+                {
+                    "business_id": "1",
+                    "place_id": "LIST1",
+                    "latitude": "1.234",
+                    "longitude": "2.345",
+                    "radius": "50",
+                    "distance": "12.3"
+                },
+                {
+                    "business_id": "2",
+                    "place_id": "LIST2",
+                    "latitude": "-1.234",
+                    "longitude": "-2.345",
+                    "radius": "100",
+                    "distance": "23.4"
+                }
+            ],
+            "page_number": "1",
+            "page_size": "30",
+            "record_count": "300"
+        }
+
+# Group Customer
+Customer related resources of the **BoonYah! API**
+This group is accessible by BOTH the iOS app, and the Kendo app.
+
+## Customer Info [/customer]
+### Get my customer info [GET]
+This will retrieve up-to-date info about the currently-authenticated customer
+
++ Response 200 (application/json)
+
+        {
+            "first_name": "Joe",
+            "last_name": "Smith",
+            "birthday_day": "1",
+            "birthday_month": "1",
+            "anniversary_day": "1",
+            "anniversary_month": "1",
+            "email": "lorem@ipsum.com",
+            "mobile": "8005551212",
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }
+
+### Send Updated Customer Info [POST]
+This allows the customer to add additional info to their user account.
+Some or all of these fields may be sent in the request.
++ Request (application/json)
+
+        {
+            "first_name": "Joe",
+            "last_name": "Smith",
+            "birthday_day" : "1",
+            "birthday_month": "1234",
+            "anniversary_day" : "1",
+            "anniversary_month": "1234",
+            "email": "august@hotmail.com",
+            "mobile: "8005551212"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }
+
+## Associate Facebook with account [/customer/addFacebook]
+### Sign on with Facebook [POST]
+All request field are required.
+facebook_oauth_token is the oauth token.
+facebook_user_id is the numeric user id of this user.
+facebook_requested permissions is a comma-separated list of the permissions that were requested.
+request_stage is either 'login' or 'feed', which corresponds to the two scenarios that we accommodate for FB perms.
+
++ Request (application/json)
+
+        {
+            "facebook_oauth_token": "the-oAuth-token",
+            "facebook_user_id": "1234512345",
+            "facebook_requested_permissions": "feed,post,whatever-fb-uses,etc",
+            "request_stage": "login OR feed"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Facebook Token Is Invalid Or Expired For This Facebook User Id, Or Requested Permission Was Not Granted."
+            }
+        }
+        
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Blank request."  // facebook_oauth_token was blank
+            }
+        }
+        
++ Response 203 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Token too long."  // facebook access token was > 512 char
+            }
+        }
+        
++ Response 205 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Request Stage Required."  // request_stage must be either 'login' or 'feed'
+            }
+        }
+        
++ Response 206 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Requested Permissions Required."  // facebook_requested_permissions is required
+            }
+        }
+        
++ Response 207 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Facebook User ID Required."
+            }
+        }
+        
++ Response 208 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Facebook User ID is too long."  // max length for the facebook user id is 64 chars
+            }
+        }
+        
++ Response 209 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "general": "Facebook Requested Permissions is too long."  // max length for the facebook requested perms is 96 chars
+            }
+        }
+        
++ Response 210 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "Invalid Or Expired oAuth Token"
+        }
+        
++ Response 211 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "Unexpected response from FB for perms"
+        }
+        
++ Response 212 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "Missing permissions from Facebook",
+            "error_message": "Missing Permission(s): [comma separated list of missing perms]"
+        }
+
+## Add facebook friend list [/customer/addFacebookFriendList]
+### Add facebook friend list [POST]
+
++ Request (application/json)
+
+        {
+            "facebook_friends_list": "{'could_be': 'json_formatted'}"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }        
+
+## Associate / Login email address with account [/customer/addEmail]
+### Sign in with email [POST]
+This method allows you to associate an email with the account.  
+It serves as both a form of 'registration' as well as a form of 'logging in'; we do not differentiate.
+If there is a form error such as malformed email or password that does not meet requirements, a normal form validation error will be returned.
+If the email exists but the password is incorrect, it will also return 'status': 'error' but with 'message': 'Invalid Email Or Password.'.
+
+NOTE: Password Strength Requirement is a very secure 4 character minimum.
+
++ Request (application/json)
+
+        {
+            "email": "august@hotmail.com",
+            "password": "1234password"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }  
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "The Email Address Format Is Invalid."
+            }
+        }  
+
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "Password Is Required."
+            }
+        }  
+
++ Response 203 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "Password Is Too Weak, Must Contain At Least 4 Characters."
+            }
+        } 
+
++ Response 205 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "Email Or Password Is Invalid."
+            }
+        }
+
+## Associate mobile number with account [/customer/addMobile]
+### Sign in with mobile [POST]
++ Request (application/json)
+
+        {
+            "mobile": "8085555555"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Add a keycode to this customer's account [/customer/addKeyCode]
+### Add a keycode [POST]
+If the keycode presented is of a valid format (up to 16 characters), then the status should return 'ok'.
+If there is a match to a business for this keycode, the API will return that business's ID, name and the logo to use for rebranding the BoonYah app.
+
++ Request (application/json)
+
+        {
+            "keycode": "12345678"
+        }
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "business":
+            {
+                "business_id": "717",
+                "start_page_url": "/#page-business?b_id=717",
+                "name": "Pet Doctor"
+            }
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "invalid_keycode",
+        }
+
+## Request a password reset link via email [/customer/resetPassword]
+### Request Password Reset [POST]
+If the email address field is omitted, the server will confirm whether this customer account has an email address.
+If not, it will return "status": "error".
+If the email address field is included but the customer account already has one, the submitted one will be ignored.
+As long as the email is either included (and is valid) in the request, or if the customer has one, it will return 'status': 'ok', even if the email does not exist. 
+(Otherwise it is a security hole that can reveal customer emails).
+
++ Request (application/json)
+
+        {
+            "email": "myresetEmail@address.com"
+        }  
+        
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "The Email Address Is Required."
+            }
+        }  
+
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "validation",
+            "error_message": "There were errors with your submission",
+            "validation_errors": {
+                "email": "The Email Address Format Is Invalid."
+            }
+        }  
+
+## Check whether the customer account is a guest [/customer/checkIsGuest] 
+### Check Is Guest [GET]
+If the customer is a guest, it will return 'status' => 'error', 'error_type' => 'guest'.
+Else status => ok
+
++ Response 200 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "guest"
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "has_email_and_password": true,
+            "has_valid_facebook": false
+        }       
+
+# Group Businesses
+Businesses related resources of the **BoonYah! API**
+
+If map_image_url is a valid URL then use this image instead of
+the map_url for the map functionality.
+
+## Businesses Collection [/businesses?business_type=all&lat=1.234&long=2.345&distance=0.5&sort=alpha&category_id=1&page_number=1&page_size=30&is_favorite=true]
+### List Businesses [GET]
++ Parameters
+    + business_type (optional, string, `all`) ... Type of businesses to return.   Possible values are **business, quest, event, all**.  Defaults to **all** if blank.  Has Example Value.
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+    + sort (required, string, `alpha`) ... Alphanumeric string representing the sort method.  Possible values are: **alpha,dist**.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+    + is_favorite (optional, string, `true`) ... If `true`, returns records with is_favorite = true only, `false` with is_favorite = false only.  Omit for both.  Has example value.
+    + category_id (optional, number, `1`) ... The category id by which to filter Business, optional.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "businesses": [
+                {
+                    "business_id": "717",
+                    "business_type": "listing, event, or quest",
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "url": "http://DogAndCat.com",
+                    "review_url": "http://yelpmaybe.com/",
+                    "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                    "business_details_custom_page_title": "Use This Text If Not Blank",
+                    "quest_tab_custom_text": "Use This Text If Not Blank",
+                    "business_details_custom_button_bottom_row_order": "Use default order if blank, or use any applicable buttons from the text, for instance: 'website,hours,share,manage'",
+                    "name": "Pet Doctor",
+                    "show_address": "yes/no",
+                    "street_address": "2703 Market Center Drive",
+                    "country": "US",
+                    "city": "Rockwall",
+                    "state": "Texas",
+                    "zip": "75032",
+                    "phone": "972-772-7777",
+                    "has_coupons": true,  // If false, interface will not show coupons but instead About Us
+                    "about_us": "This is about us!",
+                    "about_us_for_button": "This is about us for button!",
+                    "show_hours": "yes/no",
+                    "hours": {
+                        "sun": "9:30AM - 5:00PM",
+                        "mon": "Closed",
+                        "tue": "Closed",
+                        "wed": "9:30AM - 5:00PM",
+                        "thu": "9:30AM - 5:00PM",
+                        "fri": "9:30AM - 5:00PM",
+                        "sat": "Closed"
+                    },
+                    "venue": "The Venue",
+                    "is_multi_day_event": "yes/no",
+                    "event_date": "2016-04-07",
+                    "event_start_date": "2015-12-12",
+                    "event_end_date": "2015-12-14",
+                    "using_loyalty": true or false,
+                    "quest_details": "Long text of quest details",
+                    "menu_button_1": "facebook_url",
+                    "menu_button_2": "twitter_url",
+                    "menu_button_3": "",
+                    "menu_button_4": "",
+                    "menu_button_5": "",
+                    "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                    "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                    "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                    "map_url": "http://google.com/map/url",
+                    "facebook_share_url": "http://fb",
+                    "twitter_share_url": "http://twit",
+                    "donate_url": "donate_url",
+                    "menu_url": "menu_url",
+                    "store_url": "store_url",
+                    "services_url": "services_url",
+                    "reserve_url": "reserve_url",
+                    "subscribe_url": "subscribe_url",
+                    "pricing_url": "pricing_url",
+                    "tickets_url": "tickets_url",
+                    "blog_url": "blog_url",
+                    "facebook_url": "facebook_url",
+                    "twitter_url": "twitter_url",
+                    "youtube_url": "youtube_url",
+                    "is_favorite": true,
+                    "use_push_gift": true,
+                    "use_push_offer": true,
+                    "use_push_expiring": true,
+                    "categories": [1,2,3,4],
+                    "locations": [1,2,3,4],
+                    "offers_count": 2,
+                    "distance_from_customer": "2.7",
+                    "type": "featured",
+                    "configured_campaigns": [
+                        "loyalty",
+                        "quest"
+                    ],
+                    "quest_campaign_business_map_data": [
+                        {
+                            "business_id": "1234",
+                            "name": "Whatever",
+                            "latitude": "1.234",
+                            "longitude": "2.345",
+                        },
+                        {
+                            "business_id": "2345",
+                            "name": "Whatever ever",
+                            "latitude": "-7.777",
+                            "longitude": "7.777",
+                        }
+                    ]
+                },
+                {
+                    "business_id": "718",
+                    "business_type": "listing, event, or quest",
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "url": "http://DogAndCat2.com",
+                    "review_url": "http://yelpmaybe.com/",
+                    "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                    "business_details_custom_page_title": "Use This Text If Not Blank",
+                    "quest_tab_custom_text": "Use This Text If Not Blank",
+                    "business_details_custom_button_bottom_row_order": "Use default order if blank, or use any applicable buttons from the text, for instance: 'website,hours,share,manage'",
+                    "name": "Pet Doctor",
+                    "show_address": "yes/no",
+                    "street_address": "2703 Market Center Drive",
+                    "country": "US",
+                    "city": "Rockwall",
+                    "state": "Texas",
+                    "zip": "75032",
+                    "phone": "972-772-7777",
+                    "has_coupons": true,  // If false, interface will not show coupons but instead About Us
+                    "about_us": "This is about us!",
+                    "about_us_for_button": "This is about us for button!",
+                    "show_hours": "yes/no",
+                    "hours": {
+                        "sun": "9:30AM - 5:00PM",
+                        "mon": "Closed",
+                        "tue": "Closed",
+                        "wed": "9:30AM - 5:00PM",
+                        "thu": "9:30AM - 5:00PM",
+                        "fri": "9:30AM - 5:00PM",
+                        "sat": "Closed"
+                    },                    
+                    "venue": "The Venue",
+                    "is_multi_day_event": "yes/no",
+                    "event_date": "2016-04-07",
+                    "event_start_date": "2015-12-12",
+                    "event_end_date": "2015-12-14",
+                    "using_loyalty": true or false,
+                    "quest_details": "Long text of quest details",
+                    "menu_button_1": "facebook_url",
+                    "menu_button_2": "twitter_url",
+                    "menu_button_3": "",
+                    "menu_button_4": "",
+                    "menu_button_5": "",
+                    "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                    "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                    "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                    "map_url": "http://google.com/map/url",
+                    "facebook_share_url": "http://fb",
+                    "twitter_share_url": "http://twit",
+                    "donate_url": "donate_url",
+                    "menu_url": "menu_url",
+                    "store_url": "store_url",
+                    "services_url": "services_url",
+                    "reserve_url": "reserve_url",
+                    "subscribe_url": "subscribe_url",
+                    "pricing_url": "pricing_url",
+                    "tickets_url": "tickets_url",
+                    "blog_url": "blog_url",
+                    "facebook_url": "facebook_url",
+                    "twitter_url": "twitter_url",
+                    "youtube_url": "youtube_url",
+                    "is_favorite": true,
+                    "use_push_gift": true,
+                    "use_push_offer": true,
+                    "use_push_expiring": true,
+                    "categories": [1,2,3,4],
+                    "locations": [1,2,3,4],
+                    "offers_count": 2,
+                    "distance_from_customer": "2.7",
+                    "type": "featured",
+                    "configured_campaigns": [
+                        "loyalty",
+                        "quest"
+                    ],
+                    "quest_campaign_business_map_data": [
+                        {
+                            "business_id": "1234",
+                            "name": "Whatever",
+                            "latitude": "1.234",
+                            "longitude": "2.345",
+                        },
+                        {
+                            "business_id": "2345",
+                            "name": "Whatever ever",
+                            "latitude": "-7.777",
+                            "longitude": "7.777",
+                        }
+                    ]
+                }
+            ],
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2,
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }        }
+
+## Business [/businesses/{id}?lat=1.234&long=2.345]
+A single Business object with all Offers and related data
+There are five configurable menu buttons.
+The keys for these are given in the five fields `menu_button_1` through `menu_button_5`.
+The possible keys are:  
+call, map, hours, about_us, contact_email, rate,
+  website_url, donate_url, menu_url, store_url, services_url,
+  reserve_url, subscribe_url, pricing_url, tickets_url,
+  blog_url, facebook_url, twitter_url, youtube_url.
+    
+  These keys match up to these fields' keys also provided in the response:  
+  website_url -> url  
+  donate_url -> donate_url  
+  menu_url -> menu_url  
+  store_url -> store_url  
+  services_url -> services_url  
+  reserve_url -> reserve_url  
+  subscribe_url -> subscribe_url  
+  pricing_url -> pricing_url  
+  tickets_url -> tickets_url  
+  blog_url -> blog_url  
+  facebook_url -> facebook_url  
+  twitter_url -> twitter_url  
+  youtube_url -> youtube_url
+
+  These keys serve the following functions:  
+  call -> click to call based on the phone number field  
+  map -> maps solution using the address  
+  hours -> hours using the hours fields  
+  about_us_for_button -> info text using the about_us field  
+  contact_email -> contact form function using the contact_email
+  rate -> [future] integrated ratings solution
+### Retrieve a Business [GET]
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + id (required, number, `717`) ... Numeric `id` of the Business with which to perform action.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "review_url": "http://yelpmaybe.com/",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "business_details_custom_page_title": "Use This Text If Not Blank",
+                "quest_tab_custom_text": "Use This Text If Not Blank",
+                "business_details_custom_button_bottom_row_order": "Use default order if blank, or use any applicable buttons from the text, for instance: 'website,hours,share,manage'",
+                "name": "Pet Doctor",
+                "show_address": "yes/no",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,  // If false, interface will not show coupons but instead About Us
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "show_hours": "yes/no",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "offers_count": 2,
+                "distance_from_customer": "2.7",
+                "type": "featured",
+                "configured_campaigns": [
+                    "loyalty",
+                    "quest"
+                ],
+                "quest_campaign_business_map_data": [
+                    {
+                        "business_id": "1234",
+                        "name": "Whatever",
+                        "latitude": "1.234",
+                        "longitude": "2.345",
+                    },
+                    {
+                        "business_id": "2345",
+                        "name": "Whatever ever",
+                        "latitude": "-7.777",
+                        "longitude": "7.777",
+                    }
+                ]
+            },
+            "offers": [
+                {
+                    "offer_id": "1044",
+                    "business_id": "717",
+                    "headline": "$40 OFF Your Pet's Spay/Neuter",
+                    "description": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "disclaimer": "One promo per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ]
+                },
+                {
+                    "offer_id": "1444",
+                    "business_id": "717",
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ]
+                }
+            ]
+        }
+
+## Business Loyalty [/businesses/loyalty/{id}]
+Loyalty campaign data for a single business.  
+This will register the customer with this loyalty campaign at the time at which the request is made.
+### Retrieve a Busineses' Loyalty Data [GET]
++ Parameters
+    + id (required, number, `717`) ... Numeric `id` of the Business with which to perform action.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "loyalty": {    // loyalty
+                "business_id": "717",
+                "page_title": "if blank then use default, otherwise use this",
+                "total_punches_obtained": 14,  // this includes all previously obtained punchcard gifts
+                "punches_obtained": 4,
+                "punches_remaining": 6,
+                "punches_needed": 10, 
+                "campaign_has_changed": false, // if true then show a pop-up that the campaign has changed
+                "prize": {
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "gift_type": "loyalty",  // In this case, gift_type will always be loyalty
+                    "punches_needed": 10,
+                    "expected_redeem_status": "already_redeemed, already_deleted, ok",  // if saved, then redeem will remove from wallet (delete saved).
+                    "expected_save_status": "already_redeemed, already_saved, already_deleted, ok",
+                }
+            },
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "offers_count": 2,
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            }
+        }
+
+## Business Quest [/businesses/quest/{id}]
+Quest campaign data for a single business.  
+This will register the customer with this quest campaign at the time at which the request is made.
+Once completed by this customer it will still return the quest data with all businesses shown as obtained, as well as the last prize.
+### Retrieve a Businesses' Quest Data [GET]
++ Parameters
+    + id (required, number, `717`) ... Numeric `id` of the Business with which to perform action.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "quest": {    // quest campaign
+                "business_id": "717",
+                "expiration_date": "2015-01-01 08:00:00", // the expiration date of this campaign, after which no more quest redemptions will be applicable to obtaining a gift.
+                "page_title": "if blank then use default, otherwise use this",
+                "total_businesses_obtained": 14,  // this includes all previously obtained quest gifts
+                "businesses_obtained": 4,  // this is redundant, don't use it.  just count the obtained businesses.
+                "businesses_remaining": 6, // this is redundant, don't use it.  just count the remaining businesses.
+                "businesses_needed": 10,   // this is just the sum of the previous two.
+                "campaign_has_changed": false, // if true then show a pop-up that the campaign has changed...
+                "businesses": {
+                    "obtained": [
+                        {
+                            "business_id": "717",
+                            "business_type": "listing, event, or quest",
+                            "latitude": "32.8985212",
+                            "longitude": "-96.4638146",
+                            "url": "http://DogAndCat.com",
+                            "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                            "name": "Pet Doctor",
+                            "street_address": "2703 Market Center Drive",
+                            "country": "US",
+                            "city": "Rockwall",
+                            "state": "Texas",
+                            "zip": "75032",
+                            "phone": "972-772-7777",
+                            "has_coupons": true,
+                            "about_us": "This is about us!",
+                            "about_us_for_button": "This is about us for button!",
+                            "hours": {
+                                "sun": "9:30AM - 5:00PM",
+                                "mon": "Closed",
+                                "tue": "Closed",
+                                "wed": "9:30AM - 5:00PM",
+                                "thu": "9:30AM - 5:00PM",
+                                "fri": "9:30AM - 5:00PM",
+                                "sat": "Closed"
+                            },
+                            "venue": "The Venue",
+                            "is_multi_day_event": "yes/no",
+                            "event_date": "2016-04-07",
+                            "event_start_date": "2015-12-12",
+                            "event_end_date": "2015-12-14",
+                            "using_loyalty": true or false,
+                            "quest_details": "Long text of quest details",
+                            "menu_button_1": "facebook_url",
+                            "menu_button_2": "twitter_url",
+                            "menu_button_3": "",
+                            "menu_button_4": "",
+                            "menu_button_5": "",
+                            "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                            "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                            "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                            "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                            "map_url": "http://google.com/map/url",
+                            "facebook_share_url": "http://fb",
+                            "twitter_share_url": "http://twit",
+                            "donate_url": "donate_url",
+                            "menu_url": "menu_url",
+                            "store_url": "store_url",
+                            "services_url": "services_url",
+                            "reserve_url": "reserve_url",
+                            "subscribe_url": "subscribe_url",
+                            "pricing_url": "pricing_url",
+                            "tickets_url": "tickets_url",
+                            "blog_url": "blog_url",
+                            "facebook_url": "facebook_url",
+                            "twitter_url": "twitter_url",
+                            "youtube_url": "youtube_url",
+                            "is_favorite": true,
+                            "use_push_gift": true,
+                            "use_push_offer": true,
+                            "use_push_expiring": true,                    
+                            "categories": [1,2,3,4],
+                            "locations": [1,2,3,4],
+                            "offers_count": 2,
+                            "distance_from_customer": "2.7",
+                            "type": "featured"
+                        },
+                        {
+                            "business_id": "718",
+                            "business_type": "listing, event, or quest",
+                            "latitude": "32.8985212",
+                            "longitude": "-96.4638146",
+                            "url": "http://DogAndCat.com",
+                            "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                            "name": "Pet Doctor",
+                            "street_address": "2703 Market Center Drive",
+                            "country": "US",
+                            "city": "Rockwall",
+                            "state": "Texas",
+                            "zip": "75032",
+                            "phone": "972-772-7777",
+                            "has_coupons": true,
+                            "about_us": "This is about us!",
+                            "about_us_for_button": "This is about us for button!",
+                            "hours": {
+                                "sun": "9:30AM - 5:00PM",
+                                "mon": "Closed",
+                                "tue": "Closed",
+                                "wed": "9:30AM - 5:00PM",
+                                "thu": "9:30AM - 5:00PM",
+                                "fri": "9:30AM - 5:00PM",
+                                "sat": "Closed"
+                            },
+                            "venue": "The Venue",
+                            "is_multi_day_event": "yes/no",
+                            "event_date": "2016-04-07",
+                            "event_start_date": "2015-12-12",
+                            "event_end_date": "2015-12-14",
+                            "using_loyalty": true or false,
+                            "quest_details": "Long text of quest details",
+                            "menu_button_1": "facebook_url",
+                            "menu_button_2": "twitter_url",
+                            "menu_button_3": "",
+                            "menu_button_4": "",
+                            "menu_button_5": "",
+                            "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                            "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                            "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                            "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                            "map_url": "http://google.com/map/url",
+                            "facebook_share_url": "http://fb",
+                            "twitter_share_url": "http://twit",
+                            "donate_url": "donate_url",
+                            "menu_url": "menu_url",
+                            "store_url": "store_url",
+                            "services_url": "services_url",
+                            "reserve_url": "reserve_url",
+                            "subscribe_url": "subscribe_url",
+                            "pricing_url": "pricing_url",
+                            "tickets_url": "tickets_url",
+                            "blog_url": "blog_url",
+                            "facebook_url": "facebook_url",
+                            "twitter_url": "twitter_url",
+                            "youtube_url": "youtube_url",
+                            "is_favorite": true,
+                            "use_push_gift": true,
+                            "use_push_offer": true,
+                            "use_push_expiring": true,                    
+                            "categories": [1,2,3,4],
+                            "locations": [1,2,3,4],
+                            "offers_count": 2,
+                            "distance_from_customer": "2.7",
+                            "type": "featured"
+                        }
+                    ],
+                    "remaining": [
+                            "business_id": "719",
+                            "business_type": "listing, event, or quest",
+                            "latitude": "32.8985212",
+                            "longitude": "-96.4638146",
+                            "url": "http://DogAndCat.com",
+                            "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                            "name": "Pet Doctor",
+                            "street_address": "2703 Market Center Drive",
+                            "country": "US",
+                            "city": "Rockwall",
+                            "state": "Texas",
+                            "zip": "75032",
+                            "phone": "972-772-7777",
+                            "has_coupons": true,
+                            "about_us": "This is about us!",
+                            "about_us_for_button": "This is about us for button!",
+                            "hours": {
+                                "sun": "9:30AM - 5:00PM",
+                                "mon": "Closed",
+                                "tue": "Closed",
+                                "wed": "9:30AM - 5:00PM",
+                                "thu": "9:30AM - 5:00PM",
+                                "fri": "9:30AM - 5:00PM",
+                                "sat": "Closed"
+                            },
+                            "venue": "The Venue",
+                            "is_multi_day_event": "yes/no",
+                            "event_date": "2016-04-07",
+                            "event_start_date": "2015-12-12",
+                            "event_end_date": "2015-12-14",
+                            "using_loyalty": true or false,
+                            "quest_details": "Long text of quest details",
+                            "menu_button_1": "facebook_url",
+                            "menu_button_2": "twitter_url",
+                            "menu_button_3": "",
+                            "menu_button_4": "",
+                            "menu_button_5": "",
+                            "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                            "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                            "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                            "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                            "map_url": "http://google.com/map/url",
+                            "facebook_share_url": "http://fb",
+                            "twitter_share_url": "http://twit",
+                            "donate_url": "donate_url",
+                            "menu_url": "menu_url",
+                            "store_url": "store_url",
+                            "services_url": "services_url",
+                            "reserve_url": "reserve_url",
+                            "subscribe_url": "subscribe_url",
+                            "pricing_url": "pricing_url",
+                            "tickets_url": "tickets_url",
+                            "blog_url": "blog_url",
+                            "facebook_url": "facebook_url",
+                            "twitter_url": "twitter_url",
+                            "youtube_url": "youtube_url",
+                            "is_favorite": true,
+                            "use_push_gift": true,
+                            "use_push_offer": true,
+                            "use_push_expiring": true,                    
+                            "categories": [1,2,3,4],
+                            "locations": [1,2,3,4],
+                            "offers_count": 2,
+                            "distance_from_customer": "2.7",
+                            "type": "featured"
+                        },
+                        {
+                            "business_id": "720",
+                            "latitude": "32.8985212",
+                            "longitude": "-96.4638146",
+                            "url": "http://DogAndCat.com",
+                            "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                            "name": "Pet Doctor",
+                            "street_address": "2703 Market Center Drive",
+                            "country": "US",
+                            "city": "Rockwall",
+                            "state": "Texas",
+                            "zip": "75032",
+                            "phone": "972-772-7777",
+                            "has_coupons": true,
+                            "about_us": "This is about us!",
+                            "about_us_for_button": "This is about us for button!",
+                            "hours": {
+                                "sun": "9:30AM - 5:00PM",
+                                "mon": "Closed",
+                                "tue": "Closed",
+                                "wed": "9:30AM - 5:00PM",
+                                "thu": "9:30AM - 5:00PM",
+                                "fri": "9:30AM - 5:00PM",
+                                "sat": "Closed"
+                            },
+                            "venue": "The Venue",
+                            "is_multi_day_event": "yes/no",
+                            "event_date": "2016-04-07",
+                            "event_start_date": "2015-12-12",
+                            "event_end_date": "2015-12-14",
+                            "using_loyalty": true or false,
+                            "quest_details": "Long text of quest details",
+                            "menu_button_1": "facebook_url",
+                            "menu_button_2": "twitter_url",
+                            "menu_button_3": "",
+                            "menu_button_4": "",
+                            "menu_button_5": "",
+                            "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                            "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                            "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                            "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                            "map_url": "http://google.com/map/url",
+                            "facebook_share_url": "http://fb",
+                            "twitter_share_url": "http://twit",
+                            "donate_url": "donate_url",
+                            "menu_url": "menu_url",
+                            "store_url": "store_url",
+                            "services_url": "services_url",
+                            "reserve_url": "reserve_url",
+                            "subscribe_url": "subscribe_url",
+                            "pricing_url": "pricing_url",
+                            "tickets_url": "tickets_url",
+                            "blog_url": "blog_url",
+                            "facebook_url": "facebook_url",
+                            "twitter_url": "twitter_url",
+                            "youtube_url": "youtube_url",
+                            "is_favorite": true,
+                            "use_push_gift": true,
+                            "use_push_offer": true,
+                            "use_push_expiring": true,                    
+                            "categories": [1,2,3,4],
+                            "locations": [1,2,3,4],
+                            "offers_count": 2,
+                            "distance_from_customer": "2.7",
+                            "type": "featured"
+                        }                    
+                    ]
+                },
+                "prize": {
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "gift_type": "quest",  // In this case, gift_type will always be quest
+                    "businesses_needed": 10,
+                    "expected_redeem_status": "already_redeemed, already_deleted, ok",  // if saved, then redeem will remove from wallet (delete saved).
+                    "expected_save_status": "already_redeemed, already_saved, already_deleted, ok",
+                }
+            },
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "offers_count": 2,
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            }
+        }        
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "campaign_status": "expired"
+        }        
+
+## Business Contact [/businesses/contact]
+### Contact A Business [POST]
+Contact a business via BoonYah! (email functionality)
++ Request (application/json)
+
+        {
+            "business_id": "123",
+            "name" : "",
+            "subject" : "",
+            "email" : "",
+            "body" : ""
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+        
+## Business Phone Click [/businesses/phoneClick]
+### Customer Phone Click [POST]
+Customer clicked the phone link for this business
++ Request (application/json)
+
+        {
+            "business_id": "123",
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }        
+
+## Business Survey [/businesses/survey/{id}]
+### Retrieve a Business Survey status - DEPRECATED [GET]
+This method is deprecated as of 02/2015. Please refer to **Surveys**.
++ Response 200 (application/json)
+        
+## Business Survey [/businesses/survey]
+### Business Survey Feature - DEPRECATED [POST]
+This method is deprecated as of 02/2015. Please refer to **Surveys**.
++ Request (application/json)
++ Response 200 (application/json)
+
+## Businesses Settings [/businesses/settings?business_type=all&lat=1.234&long=2.345&distance=0.5&sort=alpha&page_number=1&page_size=30]
+### Get Settings For Businesses [GET]
+Gets settings for all businesses
++ Parameters
+    + business_type (optional, string, `all`) ... Type of businesses to return.   Possible values are **business, quest, event, all**.  Defaults to **all** if blank.  Has Example Value.
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+    + sort (required, string, `alpha`) ... Alphanumeric string representing the sort method.  Possible values are: **alpha,dist**.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "businesses_settings": [
+                {
+                    "business_id": "1",
+                    "business_type": "listing, event, or quest",
+                    "name": "Widgets Inc.",
+                    "distance_from_customer": "2.7",
+                    "is_favorite": true,
+                    "use_push_gift": true,
+                    "use_push_offer": true,
+                    "use_push_expiring": true,
+                    "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                    "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                    "offers_count": 2
+                },
+                {
+                    "business_id": "2",
+                    "business_type": "listing, event, or quest",
+                    "name": "Widgets Corp",
+                    "distance_from_customer": "2.7",
+                    "is_favorite": true,
+                    "use_push_gift": true,
+                    "use_push_offer": true,
+                    "use_push_expiring": true,
+                    "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                    "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                    "offers_count": 2
+                }
+            ],
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2
+        }
+
+### Update Settings For Business [POST]
+Updates setting for a single business
++ Request (application/json)
+
+        {
+            "business_id": 1,
+            "is_favorite": true,
+            "use_push_gift": true,
+            "use_push_offer": true,
+            "use_push_expiring": true
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+        }
+
+# Group Messages
+Messages related resources of the **BoonYah! API**
+## Messages [/messages?lat=1.234&long=2.345&distance=0.5&sort=alpha&page_number=1&page_size=30&deleted=no]
+### Get List Of Messages [GET]
+This will return a list of messages
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+    + sort (required, string, `alpha`) ... Alphanumeric string representing the sort method.  Possible values are: **alpha,dist**.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+    + deleted (optional, string, `no`) ... Whether to include deleted messages or not.  If 'yes', returns deleted only.  'no' -> not deleted only.  If not included, return all.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "messages": [
+                {
+                    "message_id": "4321",
+                    "business": {
+                        "business_id": "717",
+                        "name": "Pet Doctor",
+                        "use_push_gift": true,
+                        "use_push_offer": true,
+                        "use_push_expiring": true
+                    },
+                    "message": "My Push Notification Message Golden Ticket",
+                    "is_new": true,
+                    "deleted": false,
+                    "message_type": "'geo-at', 'geo-leave', 'checkin', 'beacon', 'survey', 'survey-review', 'message-offer', 'message-message', 'loyalty-geo-leave', 'loyalty', 'birthday', 'reactivation', 'quest', 'quest-geo-leave', 'punch-empl-redempt', 'quest-no-gift', 'quest-empl-redempt', 'qst-nogft-empl-redmpt', 'exp-remind',  (one of these)",
+                    "destination_type": "'checkin', 'offer', 'wallet', 'quest', 'notice', 'prize' (one of these)",
+                    "business_id": "717 (this will always be here but is used for the checkin url for gaming",
+                    "offer_id": "214 (this will not be here for checkins..)",
+                    "prize_id": "12345",
+                    "notice_id": "1",
+                    "age": "1234 (in seconds)"
+                },
+                {
+                    "message_id": 2345,
+                    "business": {
+                        "business_id": "717",
+                        "name": "Pet Doctor",
+                        "use_push_gift": true,
+                        "use_push_offer": true,
+                        "use_push_expiring": true
+                    },
+                    "message": "My Push Notification Message Spin To Wim",
+                    "is_new": true,
+                    "deleted": false,
+                    "message_type": "'geo-at', 'geo-leave', 'checkin', 'beacon', 'survey', 'survey-review', 'message-offer', 'message-message', 'loyalty-geo-leave', 'loyalty', 'birthday', 'reactivation', 'quest', 'quest-geo-leave', 'punch-empl-redempt', 'quest-no-gift', 'quest-empl-redempt', 'qst-nogft-empl-redmpt', 'exp-remind',  (one of these)",
+                    "destination_type": "'checkin', 'offer', 'wallet', 'quest', 'notice', 'prize' (one of these)",
+                    "business_id": "717 (this will always be here but is used for the checkin url for gaming",
+                    "offer_id": "214 (this will not be here for checkins..)",
+                    "prize_id": "12345",
+                    "notice_id": "1",
+                    "age": "1234 (in seconds)"         
+                }
+            ],
+            "badge_count": "5",
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2,
+            "app_version_status": "current, upgrade_recommended or upgrade_strongly_recommended",
+            "app_latest_version": "1.2"
+        }
+
+## Messages [/messages/{id}]
+### Get Single Message With Business Info [GET]
+This will return a single mssage
++ Parameters
+    + id (required, number, `4321`) ... Numeric `id` of the Message with which to perform action.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "message": {
+                "message_id": "4321",
+                "message": "My Push Notification Message Golden Ticket",
+                "is_new": true,
+                "deleted": false,
+                "message_type": "'geo-at', 'geo-leave', 'checkin', 'beacon', 'survey', 'survey-review', 'message-offer', 'message-message', 'loyalty-geo-leave', 'loyalty', 'birthday', 'reactivation', 'quest', 'quest-geo-leave', 'punch-empl-redempt', 'quest-no-gift', 'quest-empl-redempt', 'qst-nogft-empl-redmpt', 'exp-remind',  (one of these)",
+                "destination_type": "'checkin', 'offer', 'wallet', 'quest', 'notice', 'prize' (one of these)",
+                "business_id": "717 (this will always be here but is used for the checkin url for gaming",
+                "offer_id": "214 (this will not be here for checkins..)",
+                "prize_id": "12345",
+                "notice_id": "1",
+                "age": "1234 (in seconds)"
+            },
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,                
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "offers_count": 2,
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            },
+            "badge_count": "5"
+        }
+
+## Messages [/messages]
+### Update Settings For One Or More Messages [POST]
+Updates setting for one or more messages.
+
+Important: If any of the message_id's are not found, or are not owned by the customer, this will return 'status': 'error'.
+'error_type' can be 'invalid_format', 'invalid_message_id'.
+
+If a message has "hard_deleted": "true", it will be permanently deleted (cannot be undone).
+
+If there are any such errors then NO changes will be made.
++ Request (application/json)
+
+        {
+            "message_status": [
+                {
+                    "message_id": "4321",
+                    "is_new": false,
+                    "deleted": false
+                },
+                {
+                    "message_id": "4322",
+                    "is_new": false
+                },
+                {
+                    "message_id": "43221",
+                    "deleted": false
+                },
+                {
+                    "message_id": "1341",
+                    "hard_deleted": true
+                }
+            ]
+        }
+
++ Response 200 (application/json)
+
+        {
+            "badge_count": "5",
+            "status": "ok"
+        }
+        
+# Group Notices
+Notices related resources of the **BoonYah! API**
+## Notices Message [/notices/{id}]
+### Retrieve a Message [GET]
+Get Message attributes from a single business message. If no message is found, 404.
++ Parameters
+    + id (required, number, `123`) ... Numeric `id` of the Message with which to perform action.  Has example value.
+    
++ Response 200 (application/json)
+
+        {
+            "notice": {
+                "notice_id": "543",
+                "business_id": "999",
+                "name": "Free Ice Cream",
+                "headline": "The best ice cream in the biz!",
+                "push_message": "Push message of this message id.",
+                "full_message": "Entire message of this message id.",
+                "disclaimer": "Only redeemable once per visit per customer.",
+                "image": "http://www.test"
+            },
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,                
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "offers_count": 2,
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            },
+            "badge_count": "5"
+        }
+        }
+
+# Group Categories
+Categories related resources of the **BoonYah! API**
+## Categories [/categories?category_type=business&is_favorite=true&distance=0.5]
+### Get List Of Categories [GET]
+This will return all categories, which vary based on the current location.
++ Parameters
+    + category_type (optional, string `business`) ... Category Type filter.  Possible values are: **business, event**.  Defaults to 'business' if omitted.  Has example value.
+    + is_favorite (optional, string, `true`) ... If `true`, returns records with is_favorite = true only, `false` with is_favorite = false only.  Omit for both.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+
++ Response 200 (application/json)
+
+        {   
+            "categories": [
+                {
+                    "category_id": 739,
+                    "name": "Where To Dine",
+                    "raw_name": "Where To Dine",
+                    "parent_category_id": null,
+                    "image_url": "http://www.test",
+                    "is_favorite": true,
+                    "children": [
+                        {
+                            "category_id": 666,
+                            "name": "Where To Burn",
+                            "raw_name": "Where To Burn",
+                            "parent_category_id": 739,
+                            "image_url": "http://www.test",
+                            "is_favorite": true,
+                            "children": [
+                                  
+                            ],
+                            "businesses_count": 0
+                        }
+                    ],
+                    "businesses_count": 2
+                },
+                {
+                    "category_id": 444,
+                    "name": "Where To Go",
+                    "raw_name": "Where To Go",
+                    "parent_catgory_id": null,
+                    "image_url": "http://www.test",
+                    "is_favorite": true,
+                    "children": [
+                          
+                    ],
+                    "businesses_count": 1
+                }
+            ],
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }
+        }
+
+## Categories Settings [/categories/settings?category_type=business&distance=0.5]
+### Get Settings For Categories [GET]
+Gets settings for all Categories
+Parameters
+    + category_type (optional, string `business`) ... Category Type filter.  Possible values are: **business, event**.  Defaults to 'business' if omitted.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+    
++ Response 200 (application/json)
+
+        {
+            "categories_settings": [
+                {
+                    "category_id": "1",
+                    "name": "Widgets Inc.",
+                    "rawName": "Where To Burn",
+                    "parentCategoryId": null,
+                    "image_url": "http://www.test",
+                    "is_favorite": true,
+                    "children": [
+                        {
+                            "category_id": 666,
+                            "name": "Where To Burn",
+                            "rawName": "Where To Burn",
+                            "parentCategoryId": 1,
+                            "image_url": "http://www.test",
+                            "is_favorite": true,
+                            "children": [
+                            ],
+                            "businesses_count": 0
+                        }                    
+                    ],
+                    "businesses_count": 2
+                },
+                {
+                    "category_id": "2",
+                    "name": "Widgets Corp",
+                    "rawName": "Where To Widget",
+                    "parentCategoryId": null,
+                    "image_url": "http://www.test",
+                    "is_favorite": true,
+                    "children": [
+                    ],
+                    "businesses_count": 2
+                }
+            ],
+        }
+
+### Update Settings For Category [POST]
+Updates setting for a single category
++ Request (application/json)
+
+        {
+            "category_id": "1",
+            "is_favorite": true
+        }
+
++ Request Alternate (application/json)
+
+        {
+            "favorites": [
+                {
+                    "category_id": "1",
+                    "is_favorite": true
+                },
+                {
+                    "category_id": "2",
+                    "is_favorite": true
+                }
+            ]
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group Featured Ads
+Featured Ads related resources of the **Boonyah! API**
+## Featured Ads [/featuredAds?lat=1.234&long=2.345]
+### Get Featured Ads [GET]
+This will contain one to five featured ads.
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }
+        }
+
+# Group Offers
+Offers related resources of the **BoonYah! API**
+## Offers [/offers?business_ids=2,7&lat=1.234&long=2.345&distance=0.5&sort=alpha&filter=new&page_number=1&page_size=30]
+### Get Offers [GET]
++ Parameters
+    + business_ids (optional, comma delimited numbers, `4,2`) ... Comma delimited list of business id's by which to filter.
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + distance (required, number, `0.5`) ... Distance filter.  Possible values are: **0.5, 1, 2, 5, 10, 25, 50, 100, null (>100)**.  Has example value.
+    + sort (optional, string, `alpha`) ... Alphanumeric string representing the sort method.  Possible values are: **alpha,dist**.  Defaults to `alpha`.  Has example value.
+    + filter (optional, string `new`) ... Alphanumeric string represending the filter method.  Possible values are **new,expire,popular**.  Defaults to `new`. Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "offers": [
+                {
+                    "offer_id": "1044",
+                    "business_id": "717",
+                    "headline": "$40 OFF Your Pet's Spay/Neuter",
+                    "description": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "disclaimer": "One promo per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "name": "Pet Doctor",
+                    "street_address": "2703 Market Center Drive",
+                    "zip": "75032"
+                },
+                {
+                    "offer_id": "1444",
+                    "business_id": "111",
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "name": "Pet Doctor",
+                    "street_address": "2703 Market Center Drive",
+                    "zip": "75032"
+                }
+            ],
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2,
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }
+        }
+
+## Get Offer [/offers/{id}?lat=1.234&long=2.345]
+### Get Offer With Business [GET]
+Gets a single offer and associated Business info
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + id (required, number, `1044`) ... Numeric value of the offer id to be retrieved.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "offer": {
+                "offer_id": "1044",
+                "business_id": "717",
+                "headline": "$40 OFF Your Pet's Spay/Neuter",
+                "description": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                "disclaimer": "One promo per household. Not valid with any other offer.",
+                "distance_from_customer": "2.7",
+                "seconds_to_expiration": "1234",
+                "seconds_from_creation": "1234",
+                "date_end": "2015-01-01 05:05:05",
+                "is_expired": false,
+                "popularity": "100",
+                "redeemable": true,
+                "tracking_type": "offer-code, upc, or redirect-url",
+                "country": "US",
+                "state": "TX",
+                "city": "Plano",
+                "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                "image_urls": [
+                    "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                    "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                ],
+                "expected_next_redeem_status": "limit_reached, already_redeemed, ok",  // if saved, then redeem will remove from wallet (delete saved).
+                "time_until_next_redemption": "37",  // in seconds, only if already_redeemed.  after this finishes, then user can redeem another.
+                "expected_next_save_status": "limit_reached, already_saved, ok",
+                "enforce_promo_code": true,  // If true then redemption requires a promo code to be entered and validated by redeem function
+                "enforce_transaction_amount": false  // if true then redemption requires a transaction amount in positive decimal form.  
+            },
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",                
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,                
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            }
+        }
+
+## Redeem Offer [/offers/redeem]
+### Redeem Offer [POST]
+If the customer is not authenticated, then it will return 'status': 'error' and 'error_type': 'guest'.  
+In this case, the Kendo app needs to invoke the Javascript mechanism and pass the app to iOS.
+iOS will authenticate the app and invoke a callback, at which point the submission will occurr again, redeeming the offer.
+
+Please ignore status codes 201 and 202, they will all return 200.
+
++ Request (application/json)
+
+        {
+            "offer_id": "1",
+            "promo_code": "123456",
+            "transaction_amount": "123.45"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "tracking_type": "offer-code, upc, or redirect-url",
+            "upc_code_url": "http://test",
+            "offer_code": "12345",
+            "redirect_url": "http://whatever.com/",
+            "expected_next_redeem_status": "limit_reached, already_redeemed, ok",  // if saved, then redeem will remove from wallet (delete saved).
+            "time_until_next_redemption": "37",  // in seconds, only if already_redeemed.  after this finishes, then user can redeem another.
+            "expected_next_save_status": "limit_reached, already_saved, ok",            
+            "status": "ok"
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "already_redeemed",
+            "time_until_next_redemption": "37"  // in seconds
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "limit_reached"
+        }
+        
++ Response 203 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "invalid_promo_code"
+        }
+        
++ Response 205 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "invalid_transaction_amount"
+        }
+
+## Save Offer [/offers/save]
+### Save Offer To Wallet [POST]
+If the customer is not authenticated, then it will return 'status': 'error' and 'error_type': 'guest'.  
+In this case, the Kendo app needs to invoke the Javascript mechanism and pass the app to iOS.
+iOS will authenticate the app and invoke a callback, at which point the submission will occurr again, saving the offer.
+
+Please ignore status codes 201 and 202, they will all return 200.
+
++ Request (application/json)
+
+        {
+            "expected_next_redeem_status": "already_redeemed, ok",
+            "time_until_next_redemption": "37",  // in seconds, only present if already_redeemed
+            "offer_id": "2"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
++ Response 203 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "already_saved"
+        }
+        
+
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "limit_reached"
+        }        
+
+# Group Geolocation
+Geolocation related resources of the **BoonYah! API**
+## Geolocation [/geolocation]
+### Get Geolocation Info [GET]
++ Response 200 (application/json)
+
+        {
+            "lat": "1.234",
+            "long": "2.345",
+            "maps_link": "https://www.google.com/maps/preview/place/Rockwall,+TX/@32.9229415,-96.4351733,13z"
+        }
+
+### Send Geolocation Info [POST]
+This allows the client to send Boonyah the customer's current Geolocation data, both via iOS and browser apps.
+
+If the user has not chosen a location, this method will attempt to choose their location accordingly.
+
+If the geeolocation changes relative to a previous value, you will need to refresh your local data collections asynchronously after this update is confirmed as completed, and/or synchronously as the pages are re-entered in your client application.  
+
+Businesses, Locations, Offers, Prizes, Wallet, and Customer Info will all be affected.
+
+`is_override` controls whether this was chosen manually by the user, i.e. via google maps
+
+`override_active` determines whether the override should be active, this would probably be true if sending a lat/long with `is_override` set to true
++ Request (application/json)
+
+        {
+            "lat": "1.234",
+            "long": "2.345",
+            "is_override": false,
+            "override_active": false,
+            "additional_fields": "TODO: "
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group QR Code
+QR Code related resources of the **BoonYah! API**
+## QR Code [/qrcode]
+### Send QR Code [POST]
+This method is used to send QR code interactions from the dedicated QR Code scanner feature of the app to our server.
+At this time, we are using the QR code only for check-ins.
+Check-ins may result in a link to our GT or S2W game, and will also optionally result in a Quest checkin.  (qr_code_type == checkin, client to redirect kendo to redirect_url)
+If there is no running campaign or not time for a checkin, they'll get linked to the business detail page, or loyalty page, etc.  (qr_code_type == redirect, client to redirect kendo to redirect_url)
+If there is no active listing for this QR code, qr_code_type will be not_found and client should handle this gracefully.
++ Request (application/json)
+
+        {
+            "qr_code": "boonyah://checkin/business_id/1234"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // if we have a configured event on the server and push was sent
+            "push_data": {  // this is the exact data that would be sent to the APNS server, but use it for local notification instead.
+                "aps": {
+                    "alert": {
+                        "body": "my push message"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-coupons?o_id=1234",    
+                    "mid": "2755",
+                    "badge": "5"
+                }
+            },
+            "delayed_push": {  // This will only be included if there is a loyalty gift AND for checkins
+                "aps": {
+                    "alert": {
+                        "body": "A delayed local notification"
+                    },
+                    "sound": "ding.mp4",
+                    "url": "/#page-prize?p_id=1234"
+                },
+                "delay": "3600",
+                "loyalty_id": "777"
+            },
+            "delayed_pushes": [ // For punchcard and quest gifts, new version
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Punchcard"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=1234"
+                    },
+                    "delay": "3600",
+                    "loyalty_id": "777"
+                },
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #1"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-prize?p_id=2345"
+                    },
+                    "delay": "3700",
+                    "loyalty_id": "778"
+                },                
+                {
+                    "aps": {
+                        "alert": {
+                            "body": "A delayed local notification for Quest #2 that did not result in a prize"
+                        },
+                        "sound": "ding.mp4",
+                        "url": "/#page-quest?b_id=3456"
+                    },
+                    "delay": "3800"
+                }
+            ]
+        }
+        
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push",   // this happens if there is no configured event... something was misconfigured or the Business was shut down, etc.
+            "no_push_reason": "text"
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "too_soon_for_another_push"   // event was filtered, no push for this one
+        }              
+
++ Response 203 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "between_checkins"   // this happens if the customer is between check-ins.  This is set in the campaign as 'time between spins'.
+        }
+
++ Response 205 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "checkins_finished"   // This happens if the customer already has their golden ticket and the golden ticket campaign is set to 'do not use spin to win', or if 'spin to win' ran out (future)
+        }
+
++ Response 206 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "customer_filtered"   // event was filtered due to customer settings in Kendo
+        }     
+
+# Group Wallet
+Wallet related resources of the **BoonYah! API**
+For the entire Wallet group, if the customer is not authenticated, then it will return 'status': 'error' and 'error_type': 'guest'.  
+In this case, the Kendo app needs to invoke the Javascript mechanism and pass the app to iOS.
+iOS will authenticate the app and invoke a callback, at which point the submission will occurr again, where the Kendo app should invoke the action again automatically.
+
+## Get Wallet Offers [/wallet?lat=1.234&long=2.345&page_number=1&page_size=30&type=expired]
+### Get Wallet Offers [GET]
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+    + type (optional, string, `expired`) ... Can be 'expired' or 'active' (default).  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "saved_offers": [
+                {
+                    "saved_offer_id": "1234",
+                    "offer_id": "1044",
+                    "business_id": "717",
+                    "headline": "$40 OFF Your Pet's Spay/Neuter",
+                    "description": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "disclaimer": "One promo per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "name": "Pet Doctor",
+                    "street_address": "2703 Market Center Drive",
+                    "zip": "75032"
+                },
+                {
+                    "saved_offer_id": "1234",
+                    "offer_id": "1444",
+                    "business_id": "111",
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "seconds_from_creation": "1234",
+                    "date_end": "2015-01-01 05:05:05",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "latitude": "32.8985212",
+                    "longitude": "-96.4638146",
+                    "name": "Pet Doctor",
+                    "street_address": "2703 Market Center Drive",
+                    "zip": "75032"
+                }
+            ],
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2,
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }
+        }
+        
+## Get Wallet Prizes [/wallet/prizes?lat=1.234&long=2.345page_number=1&page_size=30&type=expired]
+### Get Wallet Prizes [GET]
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + page_number (optional, number, `1`) ... Page number to retrieve.  If used, then `page_size` is required, else this will be ignored.  Has example value.
+    + page_size (optional, number, `30`) ... Number of records to retrieve.  Has example value.
+    + type (optional, string, `expired`) ... Can be 'expired' or 'active' (default).  Has example value.    
+
++ Response 200 (application/json)
+
+        {
+            "saved_prizes": [
+                {
+                    "saved_prize_id": "1234",
+                    "prize_id": "1044",
+                    "business_id": "717",
+                    "headline": "$40 OFF Your Pet's Spay/Neuter",
+                    "description": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "disclaimer": "One promo per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",                    
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "redemption_period": "12345",
+                    "gift_type": "golden_ticket", // Possible values are: golden_ticket, spin_to_win, referral, anniversary, birthday, half_anniversary, half_birthday, belated_birthday, inactive, loyalty, special
+                    "punches_needed": "", // This represents how many punches were needed to win this prize.  Applicable only to loyalty gifts, blank in this example.
+                    "businesses_needed": "" // This represents how many businesses were needed to win this prize.  Applicable only to quest gifts, blank in this example.
+                },
+                {
+                    "saved_prize_id": "1235",
+                    "prize_id": "1444",                
+                    "business_id": "111",
+                    "headline": "The headline",
+                    "description": "The description",
+                    "disclaimer": "One Offer per household. Not valid with any other offer.",
+                    "distance_from_customer": "2.7",
+                    "seconds_to_expiration": "1234",
+                    "is_expired": false,
+                    "popularity": "100",
+                    "redeemable": true,
+                    "tracking_type": "offer-code, upc, or redirect-url",                                        
+                    "country": "US",
+                    "state": "TX",
+                    "city": "Plano",
+                    "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                    "image_urls": [
+                        "https://boonyah.com/images/temp/100x80-sample.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                        "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                    ],
+                    "redemption_period": "12345",
+                    "gift_type": "loyalty", // Possible values are: golden_ticket, spin_to_win, referral, anniversary, birthday, half_anniversary, half_birthday, belated_birthday, inactive, loyalty, special
+                    "punches_needed": 10, // This represents how many punches were needed to win this prize.  Applicable only to loyalty gifts.
+                    "businesses_needed": "" // This represents how many businesses were needed to win this prize.  Applicable only to quest gifts.
+                }
+            ],
+            "page_number": 1,
+            "page_size": null,
+            "record_count": 2,
+            "featured_ads": [
+                {
+                    "business_id": "717",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                },
+                {
+                    "business_id": "718",
+                    "name": "$40 OFF Your Pet's Spay/Neuter",
+                    "message": "Get $40 Off Your Pet's Spay or Neuter from Pet Doctor",
+                    "use_large_image": false,
+                    "large_image_url": "http://path.to/image.jpg",
+                    "image_url": "http://path.to/image.jpg"
+                }
+            ],
+            "page_access": {
+                "featured_ads": true,
+                "categories": true,
+                "businesses": true,
+                "wallet": true,
+                "offers": true,
+                "messages": true,
+                "favorites": true,
+                "promo_code": true,
+                "share": true,
+                "settings": true,
+                "about_us": true,
+                "sign_in": true,
+                "refresh": true
+            }
+        }        
+
+## Delete Offer From Wallet [/wallet/deleteOffer]
+### Delete Offer From Wallet [POST]
++ Request (application/json)
+
+        {
+            "saved_offer_id": "1234",
+            "expired": true
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Delete Prize From Wallet [/wallet/deletePrize]
+### Delete Prize From Wallet [POST]
++ Request (application/json)
+
+        {
+            "saved_prize_id": "1234",
+            "expired": true
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group Gaming
+Gaming related resources of the **BoonYah! API**
+## Get Game [/gaming/{id}]
+### Get Game [GET]
+This will return the state of a game for a business.
+
+Returns 404 if not found or business id is invalid, etc.
+
+States are as follows:
+1) Golden ticket, new (winner)
+2) Golden ticket, finished (winner)
+3) Spin to win, new (winner)
+4) Spin to win, finished (winner)
+5) Spin to win, new (loser)
+6) Spin to win, finished (loser)
+7) In between, Golden ticket
+8) In between, Spin to win
+9) 404
+
++ Parameters
+    + id (required, number, `1444`) ... Numeric `id` of the Business associated with the Golden Ticket/Spin To Win
+    
++ Response 200 (application/json)
+
+        {
+            "game": "golden_ticket, spin_to_win, in_between",
+            "is_golden_ticket": "true or false",
+            "state": "new or finished (winner)",
+            "winner": "true or false (golden ticket is always a winner)",
+            "is_loyalty_checkin": "true or false",
+            "prize_id": null or "1234",
+            "business": {
+                "business_id": "717",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",                
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,                
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            }
+        }
+
+## Set Initial Gift Created [/gaming/initialGiftCreated]
+### Set Initial Gift Created [POST]
+This will set the gift/prize associated with the golden ticket as 'created' or finished.
+In this case, a second visit will cause the game to show as already played (scratched off) in the Kendo app.
++ Request (application/json)
+
+        {
+            "business_id": "1444"
+        }
+    
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+        
+## Set Recurring Gift Created [/gaming/recurringGiftCreated]
+### Set Recurring Gift Created [POST]
+This will set the gift/prize associated with the recurring spin-to-win game as 'created' or finished.
+This occurs when the slot machine finishes.
+Even if the spin is a 'loss', we still send this to set the state of the game should they re-fresh.
+A second visit will cause the game to show as 'already spun'in th Kendo app.
+
++ Request (application/json)
+
+        {
+            "business_id": "1444"
+        }
+    
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }        
+
+# Group Prize
+Prize related resources of the **BoonYah! API**
+
+## Get Prize [/prize/{id}?lat=1.234&long=2.345]
+### Get Prize [GET]
++ Parameters
+    + lat (required, number, `1.234`) ... Latitude of the current centerpoint for this query.  Has example value.
+    + long (required, number, `2.345`) ... Longitude of the current centerpoint for this query.  Has example value.
+    + id (required, number, `1444`) ... Numeric `id` of the Prize to perform action with. Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "prize": {
+                "prize_id": "1444",
+                "business_id": "111",
+                "headline": "The headline",
+                "description": "The description",
+                "disclaimer": "One Offer per household. Not valid with any other offer.",
+                "distance_from_customer": "2.7",
+                "seconds_to_expiration": "1234",
+                "is_expired": false,
+                "popularity": "100",
+                "redeemable": true,
+                "tracking_type": "offer-code, upc, or redirect-url",                                    
+                "large_image_url": "https://boonyah.com/images/temp/320x180-sample.jpg",
+                "image_urls": [
+                    "https://boonyah.com/images/temp/100x80-sample.jpg",
+                    "https://boonyah.com/images/temp/100x80-sample-2.jpg",
+                    "https://boonyah.com/images/temp/100x80-sample-3.jpg"
+                ],
+                "redemption_period": "12345",
+                "gift_type": "golden_ticket", // Possible values are: golden_ticket, spin_to_win, referral, anniversary, birthday, half_anniversary, half_birthday, belated_birthday, inactive, loyalty, special
+                "punches_needed": "", // This represents how many punches were needed to win this prize.  Applicable only to gift_type == loyalty.  Blank in this example for a golden_ticket gift_type.
+                "businesses_needed": "", // This represents how many businesses were needed to win this prize.  Applicable only to gift_type == quest.  Blank in this example for a golden_ticket gift_type.
+                "expected_redeem_status": "already_redeemed, already_deleted, ok",  // if saved, then redeem will remove from wallet (delete saved).
+                "expected_save_status": "already_redeemed, already_saved, already_deleted, ok"         
+            },
+            "business": {
+                "business_id": "111",
+                "business_type": "listing, event, or quest",
+                "latitude": "32.8985212",
+                "longitude": "-96.4638146",
+                "url": "http://DogAndCat.com",
+                "review_url": "http://yelpmaybe.com/",
+                "website_button_text": "Posible Values Are: Website, Menu, Store, Products, Services, Pricing, Reservations, Subscribe",
+                "name": "Pet Doctor",
+                "street_address": "2703 Market Center Drive",
+                "country": "US",
+                "city": "Rockwall",
+                "state": "Texas",
+                "zip": "75032",
+                "phone": "972-772-7777",
+                "has_coupons": true,
+                "about_us": "This is about us!",
+                "about_us_for_button": "This is about us for button!",
+                "hours": {
+                    "sun": "9:30AM - 5:00PM",
+                    "mon": "Closed",
+                    "tue": "Closed",
+                    "wed": "9:30AM - 5:00PM",
+                    "thu": "9:30AM - 5:00PM",
+                    "fri": "9:30AM - 5:00PM",
+                    "sat": "Closed"
+                },
+                "venue": "The Venue",
+                "is_multi_day_event": "yes/no",
+                "event_date": "2016-04-07",
+                "event_start_date": "2015-12-12",
+                "event_end_date": "2015-12-14",
+                "using_loyalty": true or false,
+                "quest_details": "Long text of quest details",
+                "menu_button_1": "facebook_url",
+                "menu_button_2": "twitter_url",
+                "menu_button_3": "",
+                "menu_button_4": "",
+                "menu_button_5": "",
+                "large_logo_url": "https://boonyah.com/images/temp/320x180-sample-2.jpg",
+                "logo_url": "https://boonyah.com/images/temp/100x80-sample.jpg",
+                "logo_inset_url": "https://boonyah.com/images/temp/100x100-sample.jpg",
+                "map_image_url": "https://boonyah.com/images/temp/320x180-sample-3.jpg",
+                "map_url": "http://google.com/map/url",
+                "facebook_share_url": "http://fb",
+                "twitter_share_url": "http://twit",
+                "donate_url": "donate_url",
+                "menu_url": "menu_url",
+                "store_url": "store_url",
+                "services_url": "services_url",
+                "reserve_url": "reserve_url",
+                "subscribe_url": "subscribe_url",
+                "pricing_url": "pricing_url",
+                "tickets_url": "tickets_url",
+                "blog_url": "blog_url",
+                "facebook_url": "facebook_url",
+                "twitter_url": "twitter_url",
+                "youtube_url": "youtube_url",
+                "is_favorite": true,
+                "use_push_gift": true,
+                "use_push_offer": true,
+                "use_push_expiring": true,                
+                "categories": [1,2,3,4],
+                "locations": [1,2,3,4],
+                "distance_from_customer": "2.7",
+                "type": "featured"
+            }
+        }
+
+## Redeem Prize [/prize/redeem]
+### Redeem Prize [POST]
+If the customer is not authenticated, then it will return 'status': 'error' and 'error_type': 'guest'.  
+In this case, the Kendo app needs to invoke the Javascript mechanism and pass the app to iOS.
+iOS will authenticate the app and invoke a callback, at which point the submission will occurr again, redeeming the prize.
+
++ Request (application/json)
+
+        {
+            "prize_id": "1"
+        }
+
+
++ Response 200 (application/json)
+
+        {
+            "tracking_type": "offer-code, upc, or redirect-url",
+            "upc_code_url": "http://test",
+            "offer_code": "12345",
+            "redirect_url": "http://whatever.com/",
+            "status": "ok"  // next status is ALWAYS 'already_redeemed'.  there is only one redemption per prize, always.
+        }
+        
++ Response 201 (application/json) 
+
+        {
+            "status": "error",
+            "error_type": "already_redeemed"
+        }
+        
++ Response 202 (application/json) 
+
+        {
+            "status": "error",
+            "error_type": "already_deleted"  // it was saved previously to wallet.  but then it was deleted (never redeemed).
+        }
+
+## Save Prize [/prize/save]
+### Save Prize To Wallet [POST]
+If the customer is not authenticated, then it will return 'status': 'error' and 'error_type': 'guest'.  
+In this case, the Kendo app needs to invoke the Javascript mechanism and pass the app to iOS.
+iOS will authenticate the app and invoke a callback, at which point the submission will occurr again, saving the prize.
+
++ Request (application/json)
+
+        {
+            "prize_id": "2"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"  // next immediate status is 'already_saved' for this page view.  prize can only be saved one time.
+        }
+        
++ Response 201 (application/json) 
+
+        {
+            "status": "error",
+            "error_type": "already_redeemed"
+        }
+
++ Response 202 (application/json) 
+
+        {
+            "status": "error",
+            "error_type": "already_saved"
+        }
+        
++ Response 203 (application/json) 
+
+        {
+            "status": "error",
+            "error_type": "already_deleted"    // it was saved previously to wallet.  but then it was deleted later.  status is already deleted (never redeemed).
+        }
+        
+# Group Survey
+Surveys related resources of the **BoonYah! API**
+
+## Survey [/survey/{id}]
+### Retrieve a Survey status [GET]
+Get status for a single business survey.  If no business is found, 404.
++ Parameters
+    + id (required, number, `717`) ... Numeric `id` of the Business with which to perform action.  Has example value.
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",  // Ready to submit a survey
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "already_submitted"
+        }
+     
+## Survey [/survey]
+### Survey Feature [POST]
+Submit a survey for a single business.  If no business is found, 404.  Source survey message automatically deleted by server API on successful POST.
++ Request (application/json)
+
+        {
+            "business_id": "25",                        // Integer value indicating the business id that is associated with this survey. Has example value, required, number
+            "survey_quality": "8",                      // Integer value ranging from 1-10 that describes the quality rating of the customer’s experience. Has example value, required, number
+            "survey_customer_service": "7",             // Integer value ranging from 1-10 that describes the customer service rating of the customer’s experience. Has example value, required, number
+            "survey_pricing": "6",                      // Integer value ranging from 1-10 that describes the pricing rating of the customer’s experience. Has example value, required, number 
+            "survey_convenience": "8",                  // Integer value ranging from 1-10 that describes the convenience rating of the customer’s experience. Has example value, required, number
+            "survey_satisfaction": "7",                 // Integer value ranging from 1-10 that describes the overall satisfaction rating of the customer’s experience.  Has example value, required, number 
+            "survey_refer_others": "8",                 // Integer value ranging from 1-10 that describes the likelihood that the customer will refer the business to other people. Has example value, required, number
+            "survey_comments": "it was great."          // String value that describes any additional comments from the customer’s experience. Max length 20000. Has example value, optional, string
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "ok",   // This occurs if the customer provides a survey_refer_others of 8 or more.  IMPORTANT: the business needs a configured/published review_url.
+            "delayed_push": {  // This will be included if there is a delayed push to send back to iOS
+                "aps": {
+                    "alert": {
+                        "body": "Thanks for the feedback! Please leave us a positive review:"
+                    },
+                    "url": "http://www.yelp.com"
+                },
+                "delay": "3600"
+            }
+        }
+
++ Response 201 (application/json)
+
+        {
+            "status": "ok",
+            "push_status": "no_push"   // Survey successful but survey_refer_others was <= 7
+        }
+
++ Response 202 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "already_submitted"
+        }
+
++ Response 203 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "incorrect_survey_fields"
+        }
+        
++ Response 205 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "incorrect_survey_format"
+        }
+
+# Group About
+About related resources of the **BoonYah! API**
+
+## About [/about]
+### Get About Us Data [GET]
++ Response 200 (application/json)
+
+        {
+            "about_us": "Lorem ipsum",
+            "terms_of_use": "Loreum ipsum",
+            "privacy_policy": "Loreum ipsum",
+            "contest_rules": "Loreum ipsum"
+        }
+
+## Rate App [/about/rate]
+### Get Rate App [GET]
++ Response 200 (application/json)
+
+        {
+            "rating": "5",
+            "etc": "some text written by the user"
+        }
+
+### Send Rate App [POST]
++ Request (application/json)
+
+        {
+            "rating": "5",
+            "etc": "some text written by the user"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Contact Boonyah [/about/contact]
+### Send Contact Request [POST]
++ Request (application/json)
+
+        {
+            "name" : "",
+            "subject" : "",
+            "email" : "",
+            "body" : "" 
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group Settings
+General Settings related resources of the **BoonYah! API**
+
+## Get Settings [/settings]
+### Get Settings [GET]
++ Response 200 (application/json)
+
+        {
+            "use_location": true,
+            "use_push_gift": true,
+            "use_push_offer": true,
+            "use_push_expiring": true,
+            "use_facebook_sharing": false,
+            "use_twitter_sharing": false,
+            "app_version": "1.0",
+            "build_version": "1.0"
+        }
+        
+### Update Settings [POST]
+Any combination of these parameters may be passed
++ Request (application/json)
+
+        {
+            "use_location": true,
+            "use_push_gift": true,
+            "use_push_offer": true,
+            "use_push_expiring": true,
+            "use_facebook_sharing": false,
+            "use_twitter_sharing": false
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+        
+## Decline App Version Upgrade [/settings/declineAppVersion] 
+### Decline App Upgrade [POST]
+Tell the API that the user declined upgrading a particular app version
++ Request (application/json)
+
+        {
+            "declined_app_version": "1.3",
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }        
+
+# Group Share
+Share related resources of the **BoonYah! API**
+For the share tracking methods for FB/Twitter/SMS/email:
+If the business_id is not included, it will be tracked as a general app share.
+If the business_id is included but business is not active or not found, it will throw a 404 and not be tracked.
+business_id MUST be included for offer_id or prize_id to be tracked.
+Only include offer_id OR prize_id but not both.  offer_id will take precedence.
+If offer_id or prize_id is included and not found, 404 and no tracking.
+Thus the possible valid combos are:  No keys (still perform a POST though), business_id, business_id & offer_id, business_id & prize_id.
+
+## Get Share App Links [/share]
+### Get Share App Links [GET]
++ Response 200 (application/json)
+
+        {
+            "facebook_share_link": "http://url",
+            "twitter_share_link": "http://url"
+        }
+
+## Share App On Facebook [/share/facebook]
+### Send Share App Facebook [POST]
++ Request (application/json)
+
+        {
+            "business_id": "1234",
+            "offer_id": "2345",
+            "prize_id": "3456"  // don't include both offer_id and prize_id, see doc above.
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Share App On Twitter [/share/twitter]
+### Send Share App Twitter [POST]
++ Request (application/json)
+
+        {
+            "business_id": "1234",
+            "offer_id": "2345",
+            "prize_id": "3456"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Share App On SMS [/share/sms]
+### Send Share App Via SMS [POST]
++ Request (application/json)
+
+        {
+            "business_id": "1234",
+            "offer_id": "2345",
+            "prize_id": "3456"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+## Share App Via Email [/share/email]
+### Send Share App Via Email [POST]
++ Request (application/json)
+
+        {
+            "business_id": "1234",
+            "offer_id": "2345",
+            "prize_id": "3456"
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group Default
+Documentation and Error Reporting
+
+## API Documentation [/default]
+### Get This API Document (V1) [GET]
+This Document
++ Response 200
+
+        [ returns this document in HTML format ]
+
+## 404 Test [/default/testError404]
+### 404 Test [GET]
+Shows the format of 404 errors
++ Response 404 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "404",
+            "error_message": "404 -- Not Found"
+        }
+
+## Internal Error [/default/testErrorOops]
+### 500 Test [GET]
+Shows the format of Internal Server 500-level errors.  Your code should gracefully handle any possible error condition, including malformed JSON responses from API.
++ Response 500 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "500",
+            "error_message": "Server Error -- Contact Support"
+        }
+
+## Error Reporting [/default/errorReporting]
+### Error Reporting [POST]
+Report errors from the client to the server API, for logging and debugging.  
+
+All errors generated by the client, either as a result of unexpected or malformed responses from the API, or errors internal to the application, shall be passed to this method.
+
+If invoking this method results in an error or unexpected response from the API, then you should plan to incorporate an additional layer of error reporting to another web service for further emergency troubleshooting.  
+Please communicate with Paul for more details.
++ Request (application/json)
+
+        {
+            "error_data": "string or array"      
+        }
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+
+# Group Test
+Test Helpers
+
+## Reset Redeemed Offers [/test/resetRedeemed]
+### Remove Redeemed Offers And Prizes [POST]
+Removes all redemptions for Offers and Prizes for your customer.
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }    
+        
+## Create Gaming For A Pre Configured Business [/test/createGame]
+### Creates a game and returns business_id [POST]
+Creates a game and returns the business_id
+
++ Response 200 (application/json)
+
+        {
+            "business_id": "717",
+            "status": "ok"
+        }           
+
++ Response 201 (application/json)
+
+        {
+            "status": "error",
+            "error_type": "business_not_found, golden_ticket_not_found, business_push_not_found, message_not_created, golden_ticket_not_created",
+            "error_message": "[description of error for API developer]"
+        }
+
+## Reset Game Usage For Your Customer Account [/test/resetGameUsage]
+### Resets game usage for your customer [POST]
+Resets the game usage for your customer, so you can go back to the initial golden ticket state.
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
+        
+## Add Sample Message For Message Inbox [/test/createSampleMessage]
+### Adds a sample message to your inbox [POST]
+Resets the game usage for your customer, so you can go back to the initial golden ticket state.
+
++ Response 200 (application/json)
+
+        {
+            "message_id": "2",
+            "business_id": "3",
+            "status": "ok"
+        }
+        
+## Delete Test Customer [/test/deleteCustomer]
+### Tests the ability to purge a customer and have Kendo recover [POST]
+Delete the customer account on the server
+
++ Response 200 (application/json)
+
+        {
+            "status": "ok"
+        }
